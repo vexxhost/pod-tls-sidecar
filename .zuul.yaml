@@ -34,6 +34,7 @@
     vars: *container_image_vars
 
 - project:
+    merge-mode: squash-merge
     check:
       jobs:
         - pod-tls-sidecar-go-test
