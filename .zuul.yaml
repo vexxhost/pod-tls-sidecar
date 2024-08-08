@@ -4,6 +4,8 @@
 - job:
     name: pod-tls-sidecar-go-test
     parent: golang-go-test
+    vars:
+      go_version: "1.22.6"
 
 - project:
     check:
