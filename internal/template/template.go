@@ -17,7 +17,7 @@ type Template struct {
 }
 
 func New(tmpl string) (*Template, error) {
-	t, err := template.New("node-tls-sidecar").Parse(tmpl)
+	t, err := template.New("pod-tls-sidecar").Parse(tmpl)
 	if err != nil {
 		return nil, err
 	}
