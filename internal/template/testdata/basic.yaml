@@ -1,0 +1,19 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: "{{ .PodInfo.Name }}-ssl"
+  namespace: "{{ .PodInfo.Namespace }}"
+spec:
+  commonName: "{{ .FQDN }}"
+  dnsNames:
+    - "{{ .Hostname }}"
+    - "{{ .FQDN }}"
+  ipAddresses:
+    - "{{ .PodInfo.IP }}"
+  issuerRef:
+    kind: ClusterIssuer
+    name: atmosphere
+  usages:
+    - client auth
+    - server auth
+  secretName: "{{ .PodInfo.Name }}-ssl"
