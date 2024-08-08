@@ -6,6 +6,7 @@
     parent: golang-go-test
     vars:
       go_version: "1.22.6"
+      go_package_dir: "..."
 
 - job:
     name: pod-tls-sidecar-build-container-image
