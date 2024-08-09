@@ -9,5 +9,5 @@ COPY . /src
 RUN CGO_ENABLED=0 go build -o /pod-tls-sidecar main.go
 
 FROM ubuntu
-COPY --from=builder /src/pod-tls-sidecar /usr/bin/pod-tls-sidecar
+COPY --from=builder /pod-tls-sidecar /usr/bin/pod-tls-sidecar
 ENTRYPOINT ["/usr/bin/pod-tls-sidecar"]

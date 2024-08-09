@@ -43,7 +43,7 @@
     gate:
       jobs:
         - pod-tls-sidecar-go-test
-        - pod-tls-sidecar-build-container-image
+        - pod-tls-sidecar-upload-container-image
     promote:
       jobs:
         - pod-tls-sidecar-promote-container-image
