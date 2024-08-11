@@ -49,4 +49,5 @@ func main() {
 	log.Info("certificate created")
 
 	go manager.Watch(ctx)
+	select {}
 }
