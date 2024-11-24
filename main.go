@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/pflag"
 	"k8s.io/client-go/rest"
 
-	"github.com/vexxhost/pod-tls-sidecar/internal/tls"
 	"github.com/vexxhost/pod-tls-sidecar/pkg/template"
+	"github.com/vexxhost/pod-tls-sidecar/pkg/tls"
 )
 
 func main() {
