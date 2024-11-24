@@ -40,6 +40,7 @@ type Config struct {
 	RestConfig *rest.Config
 	Template   *template.Template
 	Paths      *WritePathConfig
+	OnUpdate   func()
 }
 
 type Manager struct {
@@ -178,10 +179,12 @@ func (m *Manager) watch(ctx context.Context) {
 			AddFunc: func(obj interface{}) {
 				secret := obj.(*v1.Secret)
 				m.write(secret)
+				m.config.OnUpdate()
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				secret := newObj.(*v1.Secret)
 				m.write(secret)
+				m.config.OnUpdate()
 			},
 			DeleteFunc: func(obj interface{}) {
 				m.logger.Fatal("secret deleted")
