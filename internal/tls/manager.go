@@ -27,7 +27,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
-	"github.com/vexxhost/pod-tls-sidecar/internal/template"
+	"github.com/vexxhost/pod-tls-sidecar/pkg/template"
 )
 
 type PodConfig struct {
