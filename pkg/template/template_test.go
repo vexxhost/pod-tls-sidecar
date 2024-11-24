@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/vexxhost/pod-tls-sidecar/internal/podinfo"
+	"github.com/vexxhost/pod-tls-sidecar/pkg/podinfo"
 )
 
 func TestTemplateFromString(t *testing.T) {

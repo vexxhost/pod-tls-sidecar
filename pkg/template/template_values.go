@@ -4,8 +4,8 @@
 package template
 
 import (
-	"github.com/vexxhost/pod-tls-sidecar/internal/net"
-	"github.com/vexxhost/pod-tls-sidecar/internal/podinfo"
+	"github.com/vexxhost/pod-tls-sidecar/pkg/net"
+	"github.com/vexxhost/pod-tls-sidecar/pkg/podinfo"
 )
 
 type Values struct {
