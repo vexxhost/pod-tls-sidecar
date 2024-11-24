@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	kubernetes "k8s.io/client-go/kubernetes/typed/core/v1"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/vexxhost/pod-tls-sidecar/pkg/template"
@@ -34,13 +33,6 @@ type WritePathConfig struct {
 	CertificateAuthorityPaths []string
 	CertificatePaths          []string
 	CertificateKeyPaths       []string
-}
-
-type Config struct {
-	RestConfig *rest.Config
-	Template   *template.Template
-	Paths      *WritePathConfig
-	OnUpdate   func()
 }
 
 type Manager struct {

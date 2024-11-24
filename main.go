@@ -15,8 +15,10 @@ import (
 )
 
 func main() {
-	var err error
-	config := &tls.Config{}
+	config, err := tls.NewConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	var templateFile string
 	pflag.StringVar(&templateFile, "template", "", "template file")
