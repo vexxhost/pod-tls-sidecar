@@ -171,12 +171,10 @@ func (m *Manager) watch(ctx context.Context) {
 			AddFunc: func(obj interface{}) {
 				secret := obj.(*v1.Secret)
 				m.write(secret)
-				m.config.OnUpdate()
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				secret := newObj.(*v1.Secret)
 				m.write(secret)
-				m.config.OnUpdate()
 			},
 			DeleteFunc: func(obj interface{}) {
 				m.logger.Fatal("secret deleted")
@@ -201,6 +199,8 @@ func (m *Manager) write(secret *v1.Secret) {
 	for _, path := range m.config.Paths.CertificateKeyPaths {
 		m.writeFile(path, secret.Data["tls.key"])
 	}
+
+	m.config.OnUpdate()
 }
 
 func (m *Manager) writeFile(path string, data []byte) {
