@@ -15,24 +15,37 @@ import (
 )
 
 func main() {
-	var err error
-	config := &tls.Config{}
-
 	var templateFile string
-	pflag.StringVar(&templateFile, "template", "", "template file")
+	var caPaths, certPaths, keyPaths []string
 
-	pflag.StringSliceVar(&config.Paths.CertificateAuthorityPaths, "ca-path", []string{}, "certificate authority paths")
-	pflag.StringSliceVar(&config.Paths.CertificatePaths, "cert-path", []string{}, "certificate paths")
-	pflag.StringSliceVar(&config.Paths.CertificateKeyPaths, "key-path", []string{}, "certificate key paths")
+	pflag.StringVar(&templateFile, "template", "", "template file")
+	pflag.StringSliceVar(&caPaths, "ca-path", []string{}, "certificate authority paths")
+	pflag.StringSliceVar(&certPaths, "cert-path", []string{}, "certificate paths")
+	pflag.StringSliceVar(&keyPaths, "key-path", []string{}, "certificate key paths")
 
 	pflag.Parse()
 
-	config.Template, err = template.NewFromFile(templateFile)
+	tmpl, err := template.NewFromFile(templateFile)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	config.RestConfig, err = rest.InClusterConfig()
+	restConfig, err := rest.InClusterConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	paths := &tls.WritePathConfig{
+		CertificateAuthorityPaths: caPaths,
+		CertificatePaths:          certPaths,
+		CertificateKeyPaths:       keyPaths,
+	}
+
+	config, err := tls.NewConfig(
+		tls.WithTemplate(tmpl),
+		tls.WithRestConfig(restConfig),
+		tls.WithPaths(paths),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -47,8 +60,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	log.Info("certificate created")
 
 	go manager.Watch(ctx)
 

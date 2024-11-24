@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	kubernetes "k8s.io/client-go/kubernetes/typed/core/v1"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/vexxhost/pod-tls-sidecar/pkg/template"
@@ -34,13 +33,6 @@ type WritePathConfig struct {
 	CertificateAuthorityPaths []string
 	CertificatePaths          []string
 	CertificateKeyPaths       []string
-}
-
-type Config struct {
-	RestConfig *rest.Config
-	Template   *template.Template
-	Paths      *WritePathConfig
-	OnUpdate   func()
 }
 
 type Manager struct {
@@ -179,12 +171,10 @@ func (m *Manager) watch(ctx context.Context) {
 			AddFunc: func(obj interface{}) {
 				secret := obj.(*v1.Secret)
 				m.write(secret)
-				m.config.OnUpdate()
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				secret := newObj.(*v1.Secret)
 				m.write(secret)
-				m.config.OnUpdate()
 			},
 			DeleteFunc: func(obj interface{}) {
 				m.logger.Fatal("secret deleted")
@@ -209,6 +199,8 @@ func (m *Manager) write(secret *v1.Secret) {
 	for _, path := range m.config.Paths.CertificateKeyPaths {
 		m.writeFile(path, secret.Data["tls.key"])
 	}
+
+	m.config.OnUpdate()
 }
 
 func (m *Manager) writeFile(path string, data []byte) {
