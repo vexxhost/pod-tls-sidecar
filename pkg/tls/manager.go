@@ -36,36 +36,43 @@ type WritePathConfig struct {
 	CertificateKeyPaths       []string
 }
 
+type Config struct {
+	RestConfig *rest.Config
+	Template   *template.Template
+	Paths      *WritePathConfig
+}
+
 type Manager struct {
+	config            *Config
 	certificate       *cmv1.Certificate
 	certificateClient cmclient.CertificateInterface
 	logger            *log.Entry
-	paths             *WritePathConfig
 	secretClient      kubernetes.SecretInterface
 }
 
-func NewManager(config *rest.Config, tmpl *template.Template, paths *WritePathConfig) (*Manager, error) {
+func NewManager(config *Config) (*Manager, error) {
 	values, err := template.LoadValues()
 	if err != nil {
 		return nil, err
 	}
 
-	certificate, err := tmpl.Execute(values)
+	certificate, err := config.Template.Execute(values)
 	if err != nil {
 		return nil, err
 	}
 
-	clientset, err := kubernetes.NewForConfig(config)
+	clientset, err := kubernetes.NewForConfig(config.RestConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	cmClient, err := cmclient.NewForConfig(config)
+	cmClient, err := cmclient.NewForConfig(config.RestConfig)
 	if err != nil {
 		return nil, err
 	}
 
 	mgr := &Manager{
+		config:            config,
 		certificate:       certificate,
 		certificateClient: cmClient.Certificates(certificate.Namespace),
 		logger: log.WithFields(log.Fields{
@@ -77,7 +84,6 @@ func NewManager(config *rest.Config, tmpl *template.Template, paths *WritePathCo
 			"hostname":        values.Hostname,
 			"fqdn":            values.FQDN,
 		}),
-		paths:        paths,
 		secretClient: clientset.Secrets(certificate.Namespace),
 	}
 
@@ -189,15 +195,15 @@ func (m *Manager) watch(ctx context.Context) {
 }
 
 func (m *Manager) write(secret *v1.Secret) {
-	for _, path := range m.paths.CertificateAuthorityPaths {
+	for _, path := range m.config.Paths.CertificateAuthorityPaths {
 		m.writeFile(path, secret.Data["ca.crt"])
 	}
 
-	for _, path := range m.paths.CertificatePaths {
+	for _, path := range m.config.Paths.CertificatePaths {
 		m.writeFile(path, secret.Data["tls.crt"])
 	}
 
-	for _, path := range m.paths.CertificateKeyPaths {
+	for _, path := range m.config.Paths.CertificateKeyPaths {
 		m.writeFile(path, secret.Data["tls.key"])
 	}
 }

@@ -15,27 +15,29 @@ import (
 )
 
 func main() {
+	var err error
+	config := &tls.Config{}
+
 	var templateFile string
 	pflag.StringVar(&templateFile, "template", "", "template file")
 
-	var writePathConfig tls.WritePathConfig
-	pflag.StringSliceVar(&writePathConfig.CertificateAuthorityPaths, "ca-path", []string{}, "certificate authority paths")
-	pflag.StringSliceVar(&writePathConfig.CertificatePaths, "cert-path", []string{}, "certificate paths")
-	pflag.StringSliceVar(&writePathConfig.CertificateKeyPaths, "key-path", []string{}, "certificate key paths")
+	pflag.StringSliceVar(&config.Paths.CertificateAuthorityPaths, "ca-path", []string{}, "certificate authority paths")
+	pflag.StringSliceVar(&config.Paths.CertificatePaths, "cert-path", []string{}, "certificate paths")
+	pflag.StringSliceVar(&config.Paths.CertificateKeyPaths, "key-path", []string{}, "certificate key paths")
 
 	pflag.Parse()
 
-	tmpl, err := template.NewFromFile(templateFile)
+	config.Template, err = template.NewFromFile(templateFile)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	config, err := rest.InClusterConfig()
+	config.RestConfig, err = rest.InClusterConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	manager, err := tls.NewManager(config, tmpl, &writePathConfig)
+	manager, err := tls.NewManager(config)
 	if err != nil {
 		log.Fatal(err)
 	}
