@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNoCrashWithoutHook(t *testing.T) {
+func TestNewConfig(t *testing.T) {
 	config, err := NewConfig()
 	require.NoError(t, err)
 
