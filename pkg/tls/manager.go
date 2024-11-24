@@ -30,13 +30,6 @@ import (
 	"github.com/vexxhost/pod-tls-sidecar/pkg/template"
 )
 
-type PodConfig struct {
-	UID       string `envconfig:"POD_UID" required:"true"`
-	Name      string `envconfig:"POD_NAME" required:"true"`
-	Namespace string `envconfig:"POD_NAMESPACE" required:"true"`
-	IP        string `envconfig:"POD_IP" required:"true"`
-}
-
 type WritePathConfig struct {
 	CertificateAuthorityPaths []string
 	CertificatePaths          []string
