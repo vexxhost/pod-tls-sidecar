@@ -17,18 +17,18 @@ fields based on the pod's identity.
 This project uses [semantic versioning](https://semver.org/) with version tags
 prefixed with `v` (e.g., `v1.0.0`, `v1.2.3`).
 
-To create a new release:
+To create a new release using the [GitHub CLI](https://cli.github.com/):
 
-1. Go to the [Releases](https://github.com/vexxhost/pod-tls-sidecar/releases) page on GitHub
-2. Click **Draft a new release**
-3. Click **Choose a tag** and type your new version (e.g., `v1.0.0`)
-4. Select **Create new tag: vX.Y.Z on publish**
-5. Set the **Target** to `main` (or appropriate branch)
-6. Enter a **Release title** (typically the version number, e.g., `v1.0.0`)
-7. Click **Generate release notes** to auto-generate the changelog from merged
-   pull requests and commits since the last release
-8. Review and edit the generated notes if needed
-9. Click **Publish release**
+```bash
+gh release create vX.Y.Z --generate-notes
+```
+
+This will:
+
+- Create a new tag `vX.Y.Z` on the current branch
+- Auto-generate release notes from merged pull requests and commits since the
+  last release
+- Publish the release to GitHub
 
 ### Version Numbering
 
