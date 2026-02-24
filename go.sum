@@ -2,6 +2,8 @@ github.com/cert-manager/cert-manager v1.15.4 h1:FtH6BOTmkNBNRjoYSW2b80MYpUq4Zw1z
 github.com/cert-manager/cert-manager v1.15.4/go.mod h1:stBge/DTvrhfQMB/93+Y62s+gQgZBsfL1o0C/4AL/mI=
 github.com/cert-manager/cert-manager v1.19.2 h1:jSprN1h5pgNDSl7HClAmIzXuTxic/5FXJ32kbQHqjlM=
 github.com/cert-manager/cert-manager v1.19.2/go.mod h1:e9NzLtOKxTw7y99qLyWGmPo6mrC1Nh0EKKcMkRfK+GE=
+github.com/cert-manager/cert-manager v1.19.4 h1:7lOkSYj+nJNjgGFfAznQzPpOfWX+1Kgz6xUXwTa/K5k=
+github.com/cert-manager/cert-manager v1.19.4/go.mod h1:9uBnn3IK9NxjjuXmQDYhwOwFUU5BtGVB1g/voPvvcVw=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
@@ -144,6 +146,8 @@ golang.org/x/sys v0.24.0 h1:Twjiwq9dn6R1fQcyiK+wQyHWfaz/BJB+YIpzU/Cv3Xg=
 golang.org/x/sys v0.24.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
 golang.org/x/sys v0.38.0 h1:3yZWxaJjBmCWXqhN1qh02AkOnCQ1poK6oF+a7xWL6Gc=
 golang.org/x/sys v0.38.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=
+golang.org/x/sys v0.40.0 h1:DBZZqJ2Rkml6QMQsZywtnjnnGvHza6BTfYFWY9kjEWQ=
+golang.org/x/sys v0.40.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=
 golang.org/x/term v0.23.0 h1:F6D4vR+EHoL9/sWAWgAR1H2DcHr4PareCbAaCo1RpuU=
 golang.org/x/term v0.23.0/go.mod h1:DgV24QBUrK6jhZXl+20l6UWznPlwAHm1Q1mGHtydmSk=
 golang.org/x/term v0.37.0 h1:8EGAD0qCmHYZg6J17DvsMy9/wJ7/D/4pV/wfnld5lTU=
