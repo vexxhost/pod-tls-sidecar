@@ -29,6 +29,22 @@ import (
 	"github.com/vexxhost/pod-tls-sidecar/pkg/template"
 )
 
+// watchRetryDelay is the time to wait between watch reconnect attempts.
+// It is a variable so tests can shorten it.
+var watchRetryDelay = 5 * time.Second
+
+// jsonMarshal is the json.Marshal function. It is a variable so tests can
+// inject a stub that returns an error.
+var jsonMarshal = json.Marshal
+
+// newKubernetesForConfig and newCMClientForConfig are the factory functions
+// used by NewManager to build Kubernetes clients. They are variables so that
+// tests can inject fakes or error-returning stubs.
+var (
+	newKubernetesForConfig = kubernetes.NewForConfig
+	newCMClientForConfig   = cmclient.NewForConfig
+)
+
 type WritePathConfig struct {
 	CertificateAuthorityPaths []string
 	CertificatePaths          []string
@@ -41,6 +57,11 @@ type Manager struct {
 	certificateClient cmclient.CertificateInterface
 	logger            *log.Entry
 	secretClient      kubernetes.SecretInterface
+
+	// watchFn, when non-nil, is called by Watch instead of m.watch.
+	// This allows tests to control the watch behaviour without running a
+	// real informer loop.
+	watchFn func(ctx context.Context)
 }
 
 func NewManager(config *Config) (*Manager, error) {
@@ -54,12 +75,12 @@ func NewManager(config *Config) (*Manager, error) {
 		return nil, err
 	}
 
-	clientset, err := kubernetes.NewForConfig(config.RestConfig)
+	clientset, err := newKubernetesForConfig(config.RestConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	cmClient, err := cmclient.NewForConfig(config.RestConfig)
+	cmClient, err := newCMClientForConfig(config.RestConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +149,7 @@ func (m *Manager) Create(ctx context.Context) error {
 			"value": m.certificate.OwnerReferences,
 		},
 	}
-	patchBytes, err := json.Marshal(patch)
+	patchBytes, err := jsonMarshal(patch)
 	if err != nil {
 		return err
 	}
@@ -141,11 +162,27 @@ func (m *Manager) Create(ctx context.Context) error {
 }
 
 func (m *Manager) Watch(ctx context.Context) {
+	watchFn := m.watchFn
+	if watchFn == nil {
+		watchFn = m.watch
+	}
+
 	for {
-		m.watch(ctx)
+		watchFn(ctx)
+
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		m.logger.Info("watch closed or disconnected, retrying in 5 seconds")
 
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(watchRetryDelay):
+		}
 	}
 }
 
@@ -183,7 +220,10 @@ func (m *Manager) watch(ctx context.Context) {
 	)
 
 	stop := make(chan struct{})
-	defer close(stop)
+	go func() {
+		<-ctx.Done()
+		close(stop)
+	}()
 	controller.Run(stop)
 }
 
@@ -240,3 +280,4 @@ func (m *Manager) writeFile(path string, data []byte) {
 		log.Fatal(err)
 	}
 }
+
