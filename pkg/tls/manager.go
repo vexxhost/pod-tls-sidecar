@@ -26,24 +26,11 @@ import (
 	kubernetes "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 
+	pkgnet "github.com/vexxhost/pod-tls-sidecar/pkg/net"
 	"github.com/vexxhost/pod-tls-sidecar/pkg/template"
 )
 
-// watchRetryDelay is the time to wait between watch reconnect attempts.
-// It is a variable so tests can shorten it.
-var watchRetryDelay = 5 * time.Second
-
-// jsonMarshal is the json.Marshal function. It is a variable so tests can
-// inject a stub that returns an error.
-var jsonMarshal = json.Marshal
-
-// newKubernetesForConfig and newCMClientForConfig are the factory functions
-// used by NewManager to build Kubernetes clients. They are variables so that
-// tests can inject fakes or error-returning stubs.
-var (
-	newKubernetesForConfig = kubernetes.NewForConfig
-	newCMClientForConfig   = cmclient.NewForConfig
-)
+const defaultWatchRetryDelay = 5 * time.Second
 
 type WritePathConfig struct {
 	CertificateAuthorityPaths []string
@@ -57,15 +44,15 @@ type Manager struct {
 	certificateClient cmclient.CertificateInterface
 	logger            *log.Entry
 	secretClient      kubernetes.SecretInterface
-
-	// watchFn, when non-nil, is called by Watch instead of m.watch.
-	// This allows tests to control the watch behaviour without running a
-	// real informer loop.
-	watchFn func(ctx context.Context)
 }
 
 func NewManager(config *Config) (*Manager, error) {
-	values, err := template.LoadValues()
+	resolver := config.Resolver
+	if resolver == nil {
+		resolver = pkgnet.SystemResolver{}
+	}
+
+	values, err := template.LoadValues(resolver)
 	if err != nil {
 		return nil, err
 	}
@@ -75,20 +62,29 @@ func NewManager(config *Config) (*Manager, error) {
 		return nil, err
 	}
 
-	clientset, err := newKubernetesForConfig(config.RestConfig)
-	if err != nil {
-		return nil, err
+	secretClient := config.SecretClient
+	certificateClient := config.CertificateClient
+
+	if secretClient == nil {
+		clientset, err := kubernetes.NewForConfig(config.RestConfig)
+		if err != nil {
+			return nil, err
+		}
+		secretClient = clientset.Secrets(certificate.Namespace)
 	}
 
-	cmClient, err := newCMClientForConfig(config.RestConfig)
-	if err != nil {
-		return nil, err
+	if certificateClient == nil {
+		cmClient, err := cmclient.NewForConfig(config.RestConfig)
+		if err != nil {
+			return nil, err
+		}
+		certificateClient = cmClient.Certificates(certificate.Namespace)
 	}
 
 	mgr := &Manager{
 		config:            config,
 		certificate:       certificate,
-		certificateClient: cmClient.Certificates(certificate.Namespace),
+		certificateClient: certificateClient,
 		logger: log.WithFields(log.Fields{
 			"certificateName": certificate.Name,
 			"podName":         values.PodInfo.Name,
@@ -98,7 +94,7 @@ func NewManager(config *Config) (*Manager, error) {
 			"hostname":        values.Hostname,
 			"fqdn":            values.FQDN,
 		}),
-		secretClient: clientset.Secrets(certificate.Namespace),
+		secretClient: secretClient,
 	}
 
 	return mgr, nil
@@ -149,7 +145,7 @@ func (m *Manager) Create(ctx context.Context) error {
 			"value": m.certificate.OwnerReferences,
 		},
 	}
-	patchBytes, err := jsonMarshal(patch)
+	patchBytes, err := json.Marshal(patch)
 	if err != nil {
 		return err
 	}
@@ -161,14 +157,16 @@ func (m *Manager) Create(ctx context.Context) error {
 	return err
 }
 
-func (m *Manager) Watch(ctx context.Context) {
-	watchFn := m.watchFn
-	if watchFn == nil {
-		watchFn = m.watch
+func (m *Manager) watchRetryDelay() time.Duration {
+	if m.config.WatchRetryDelay > 0 {
+		return m.config.WatchRetryDelay
 	}
+	return defaultWatchRetryDelay
+}
 
+func (m *Manager) Watch(ctx context.Context) {
 	for {
-		watchFn(ctx)
+		m.watch(ctx)
 
 		select {
 		case <-ctx.Done():
@@ -181,7 +179,7 @@ func (m *Manager) Watch(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(watchRetryDelay):
+		case <-time.After(m.watchRetryDelay()):
 		}
 	}
 }

@@ -11,8 +11,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	pkgnet "github.com/vexxhost/pod-tls-sidecar/pkg/net"
+	"github.com/vexxhost/pod-tls-sidecar/pkg/net"
 )
+
+type mockResolver struct {
+	hostname    string
+	hostnameErr error
+	fqdn        string
+	fqdnErr     error
+}
+
+func (m *mockResolver) Hostname() (string, error) { return m.hostname, m.hostnameErr }
+func (m *mockResolver) FQDN() (string, error)     { return m.fqdn, m.fqdnErr }
 
 func TestLoadValues(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
@@ -21,13 +31,28 @@ func TestLoadValues(t *testing.T) {
 		t.Setenv("POD_NAMESPACE", "test-namespace")
 		t.Setenv("POD_IP", "10.0.0.1")
 
-		values, err := LoadValues()
+		resolver := &mockResolver{hostname: "myhost", fqdn: "myhost.example.com"}
+
+		values, err := LoadValues(resolver)
 		require.NoError(t, err)
 
 		assert.Equal(t, "test-uid", string(values.PodInfo.UID))
 		assert.Equal(t, "test-name", values.PodInfo.Name)
 		assert.Equal(t, "test-namespace", values.PodInfo.Namespace)
 		assert.Equal(t, "10.0.0.1", values.PodInfo.IP)
+		assert.Equal(t, "myhost", values.Hostname)
+		assert.Equal(t, "myhost.example.com", values.FQDN)
+	})
+
+	t.Run("success with SystemResolver", func(t *testing.T) {
+		t.Setenv("POD_UID", "test-uid")
+		t.Setenv("POD_NAME", "test-name")
+		t.Setenv("POD_NAMESPACE", "test-namespace")
+		t.Setenv("POD_IP", "10.0.0.1")
+
+		values, err := LoadValues(net.SystemResolver{})
+		require.NoError(t, err)
+
 		assert.NotEmpty(t, values.Hostname)
 		assert.NotEmpty(t, values.FQDN)
 	})
@@ -51,7 +76,7 @@ func TestLoadValues(t *testing.T) {
 			}
 		})
 
-		_, err := LoadValues()
+		_, err := LoadValues(&mockResolver{})
 		require.Error(t, err)
 	})
 
@@ -61,13 +86,9 @@ func TestLoadValues(t *testing.T) {
 		t.Setenv("POD_NAMESPACE", "test-namespace")
 		t.Setenv("POD_IP", "10.0.0.1")
 
-		orig := pkgnet.HostnameFunc()
-		pkgnet.SetHostnameFunc(func() (string, error) {
-			return "", fmt.Errorf("hostname error")
-		})
-		defer pkgnet.SetHostnameFunc(orig)
+		resolver := &mockResolver{hostnameErr: fmt.Errorf("hostname error")}
 
-		_, err := LoadValues()
+		_, err := LoadValues(resolver)
 		require.Error(t, err)
 	})
 
@@ -77,11 +98,9 @@ func TestLoadValues(t *testing.T) {
 		t.Setenv("POD_NAMESPACE", "test-namespace")
 		t.Setenv("POD_IP", "10.0.0.1")
 
-		orig := pkgnet.FqdnCmd()
-		pkgnet.SetFqdnCmd("/nonexistent/hostname")
-		defer pkgnet.SetFqdnCmd(orig)
+		resolver := &mockResolver{hostname: "myhost", fqdnErr: fmt.Errorf("fqdn error")}
 
-		_, err := LoadValues()
+		_, err := LoadValues(resolver)
 		require.Error(t, err)
 	})
 }

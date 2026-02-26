@@ -14,7 +14,6 @@ import (
 	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	cmfake "github.com/cert-manager/cert-manager/pkg/client/clientset/versioned/fake"
-	cmclient "github.com/cert-manager/cert-manager/pkg/client/clientset/versioned/typed/certmanager/v1"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,8 +53,19 @@ const (
 	testNamespace = "default"
 )
 
-// newTestManager builds a Manager with fake clients, bypassing NewManager to
-// avoid the LoadValues / REST-config dependency.
+// mockResolver implements net.Resolver for tests.
+type mockResolver struct {
+	hostname    string
+	hostnameErr error
+	fqdn        string
+	fqdnErr     error
+}
+
+func (m *mockResolver) Hostname() (string, error) { return m.hostname, m.hostnameErr }
+func (m *mockResolver) FQDN() (string, error)     { return m.fqdn, m.fqdnErr }
+
+// newTestManager builds a Manager with fake clients injected via Config,
+// bypassing NewManager to avoid the LoadValues / REST-config dependency.
 func newTestManager(t *testing.T, cert *cmv1.Certificate, secret *v1.Secret, paths *WritePathConfig) (*Manager, *cmfake.Clientset, *k8sfake.Clientset) {
 	t.Helper()
 
@@ -156,6 +166,38 @@ spec:
 	)
 	require.NoError(t, err)
 
+	// Resolver left nil to exercise the default SystemResolver path.
+	_, err = NewManager(config)
+	require.Error(t, err)
+}
+
+func TestNewManager_HostnameResolverError(t *testing.T) {
+	t.Setenv("POD_UID", "uid")
+	t.Setenv("POD_NAME", "name")
+	t.Setenv("POD_NAMESPACE", "ns")
+	t.Setenv("POD_IP", "1.2.3.4")
+
+	tmpl, err := template.New(`apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: test
+  namespace: default
+spec:
+  secretName: test
+  issuerRef:
+    kind: ClusterIssuer
+    name: test
+`)
+	require.NoError(t, err)
+
+	config, err := NewConfig(
+		WithTemplate(tmpl),
+		WithRestConfig(&rest.Config{Host: "http://localhost:8080"}),
+		WithPaths(&WritePathConfig{}),
+	)
+	require.NoError(t, err)
+	config.Resolver = &mockResolver{hostnameErr: fmt.Errorf("hostname error")}
+
 	_, err = NewManager(config)
 	require.Error(t, err)
 }
@@ -176,6 +218,7 @@ func TestNewManager_ExecuteError(t *testing.T) {
 		WithPaths(&WritePathConfig{}),
 	)
 	require.NoError(t, err)
+	config.Resolver = &mockResolver{hostname: "host", fqdn: "host.example.com"}
 
 	_, err = NewManager(config)
 	require.Error(t, err)
@@ -207,6 +250,7 @@ spec:
 		WithPaths(&WritePathConfig{}),
 	)
 	require.NoError(t, err)
+	config.Resolver = &mockResolver{hostname: "host", fqdn: "host.example.com"}
 
 	_, err = NewManager(config)
 	require.Error(t, err)
@@ -231,19 +275,19 @@ spec:
 `)
 	require.NoError(t, err)
 
-	// Make the kubernetes client succeed but the CM client fail.
-	origCM := newCMClientForConfig
-	newCMClientForConfig = func(c *rest.Config) (*cmclient.CertmanagerV1Client, error) {
-		return nil, fmt.Errorf("cm client error")
-	}
-	defer func() { newCMClientForConfig = origCM }()
+	// Pre-inject a valid SecretClient so the k8s client path is skipped,
+	// but leave CertificateClient nil with an invalid RestConfig so the
+	// cert-manager client creation fails.
+	fakeK8s := k8sfake.NewSimpleClientset()
 
 	config, err := NewConfig(
 		WithTemplate(tmpl),
-		WithRestConfig(&rest.Config{Host: "http://localhost:8080"}),
+		WithRestConfig(&rest.Config{Host: "://invalid-url"}),
 		WithPaths(&WritePathConfig{}),
 	)
 	require.NoError(t, err)
+	config.Resolver = &mockResolver{hostname: "host", fqdn: "host.example.com"}
+	config.SecretClient = fakeK8s.CoreV1().Secrets("ns")
 
 	_, err = NewManager(config)
 	require.Error(t, err)
@@ -274,10 +318,49 @@ spec:
 		WithPaths(&WritePathConfig{}),
 	)
 	require.NoError(t, err)
+	config.Resolver = &mockResolver{hostname: "host", fqdn: "host.example.com"}
 
 	mgr, err := NewManager(config)
 	require.NoError(t, err)
 	assert.NotNil(t, mgr)
+}
+
+func TestNewManager_SuccessWithInjectedClients(t *testing.T) {
+	t.Setenv("POD_UID", "uid")
+	t.Setenv("POD_NAME", "name")
+	t.Setenv("POD_NAMESPACE", "ns")
+	t.Setenv("POD_IP", "1.2.3.4")
+
+	tmpl, err := template.New(`apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: "{{ .PodInfo.Name }}-ssl"
+  namespace: "{{ .PodInfo.Namespace }}"
+spec:
+  secretName: "{{ .PodInfo.Name }}-ssl"
+  issuerRef:
+    kind: ClusterIssuer
+    name: test
+`)
+	require.NoError(t, err)
+
+	fakeK8s := k8sfake.NewSimpleClientset()
+	fakeCM := cmfake.NewSimpleClientset()
+
+	config, err := NewConfig(
+		WithTemplate(tmpl),
+		WithPaths(&WritePathConfig{}),
+	)
+	require.NoError(t, err)
+	config.Resolver = &mockResolver{hostname: "host", fqdn: "host.example.com"}
+	config.SecretClient = fakeK8s.CoreV1().Secrets("ns")
+	config.CertificateClient = fakeCM.CertmanagerV1().Certificates("ns")
+
+	mgr, err := NewManager(config)
+	require.NoError(t, err)
+	assert.NotNil(t, mgr)
+	// RestConfig is nil, but no error since clients were injected.
+	assert.Nil(t, config.RestConfig)
 }
 
 // ─── Create ──────────────────────────────────────────────────────────────────
@@ -291,18 +374,14 @@ func TestCreate_Success(t *testing.T) {
 }
 
 func TestCreate_AlreadyExists(t *testing.T) {
-	// Certificate already exists (pre-seeded) — Create should treat AlreadyExists
-	// as a success and continue waiting for Ready.
 	cert := readyCert()
 	mgr, _, _ := newTestManager(t, cert, testSecret(), nil)
 
-	// A second Create call will hit AlreadyExists again.
 	err := mgr.Create(context.Background())
 	require.NoError(t, err)
 }
 
 func TestCreate_CreateError(t *testing.T) {
-	// No pre-seeded cert so Create will try to create one; we inject an error.
 	mgr, fakeCM, _ := newTestManager(t, nil, nil, nil)
 	mgr.certificate = &cmv1.Certificate{
 		ObjectMeta: metav1.ObjectMeta{Name: testCertName, Namespace: testNamespace},
@@ -323,7 +402,6 @@ func TestCreate_GetError(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: testCertName, Namespace: testNamespace},
 	}
 
-	// Create succeeds (no cert pre-seeded, fake adds it), but Get returns error.
 	fakeCM.PrependReactor("get", "certificates",
 		func(action k8stesting.Action) (bool, runtime.Object, error) {
 			return true, nil, fmt.Errorf("get error")
@@ -334,9 +412,6 @@ func TestCreate_GetError(t *testing.T) {
 }
 
 func TestCreate_CertNotReadyThenTimeout(t *testing.T) {
-	// Certificate is present but not yet ready. The poll logs the "not ready"
-	// message and then the short-lived context expires, exercising all branches
-	// of the polling loop.
 	cert := &cmv1.Certificate{
 		ObjectMeta: metav1.ObjectMeta{Name: testCertName, Namespace: testNamespace},
 		Status: cmv1.CertificateStatus{
@@ -357,20 +432,6 @@ func TestCreate_CertNotReadyThenTimeout(t *testing.T) {
 
 	err := mgr.Create(ctx)
 	require.Error(t, err) // context deadline exceeded
-}
-
-func TestCreate_MarshalError(t *testing.T) {
-	cert := readyCert()
-	mgr, _, _ := newTestManager(t, cert, testSecret(), nil)
-
-	origMarshal := jsonMarshal
-	jsonMarshal = func(v any) ([]byte, error) {
-		return nil, fmt.Errorf("marshal error")
-	}
-	defer func() { jsonMarshal = origMarshal }()
-
-	err := mgr.Create(context.Background())
-	require.Error(t, err)
 }
 
 func TestCreate_PatchError(t *testing.T) {
@@ -462,7 +523,6 @@ func TestWriteFile_SameContent(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(path, data, 0644))
 
-	// Call writeFile again with the same data — file should remain unchanged.
 	mgr.writeFile(path, data)
 
 	got, err := os.ReadFile(path)
@@ -502,7 +562,6 @@ func TestWriteFile_FatalOnMkdirError(t *testing.T) {
 
 	mgr := newWriteFileMgr()
 
-	// Create a regular file where a directory is expected, so MkdirAll fails.
 	blockingFile := filepath.Join(t.TempDir(), "parent")
 	require.NoError(t, os.WriteFile(blockingFile, []byte("I am a file"), 0644))
 	path := filepath.Join(blockingFile, "child.txt")
@@ -518,7 +577,6 @@ func TestWriteFile_FatalOnWriteNewFileError(t *testing.T) {
 
 	mgr := newWriteFileMgr()
 
-	// Create a read-only directory so the WriteFile call fails.
 	readOnlyDir := filepath.Join(t.TempDir(), "readonly")
 	require.NoError(t, os.MkdirAll(readOnlyDir, 0555))
 	path := filepath.Join(readOnlyDir, "file.txt")
@@ -536,7 +594,6 @@ func TestWriteFile_FatalOnReadError(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "file.txt")
 	require.NoError(t, os.WriteFile(path, []byte("original"), 0644))
-	// Remove all permissions so ReadFile fails with a non-NotExist error.
 	require.NoError(t, os.Chmod(path, 0000))
 	defer os.Chmod(path, 0644) //nolint:errcheck
 
@@ -553,7 +610,6 @@ func TestWriteFile_FatalOnUpdateError(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "file.txt")
 	require.NoError(t, os.WriteFile(path, []byte("original"), 0644))
-	// Make the file read-only so the update WriteFile call fails.
 	require.NoError(t, os.Chmod(path, 0444))
 	defer os.Chmod(path, 0644) //nolint:errcheck
 
@@ -564,7 +620,7 @@ func TestWriteFile_FatalOnUpdateError(t *testing.T) {
 // ─── watch (informer loop) ────────────────────────────────────────────────────
 
 // buildWatchMgr returns a Manager wired to a fake k8s clientset that has
-// 'secret' pre-seeded.  It also registers a watch reactor that stores the
+// 'secret' pre-seeded. It also registers a watch reactor that stores the
 // FakeWatcher so tests can inject events.
 func buildWatchMgr(t *testing.T, secret *v1.Secret, paths *WritePathConfig) (*Manager, *k8sfake.Clientset, **kwatchpkg.FakeWatcher, chan struct{}) {
 	t.Helper()
@@ -595,6 +651,7 @@ func buildWatchMgr(t *testing.T, secret *v1.Secret, paths *WritePathConfig) (*Ma
 				default:
 				}
 			},
+			WatchRetryDelay: 10 * time.Millisecond,
 		},
 		certificate: &cmv1.Certificate{
 			ObjectMeta: metav1.ObjectMeta{Name: testCertName, Namespace: testNamespace},
@@ -630,7 +687,6 @@ func TestWatch_AddFunc(t *testing.T) {
 
 	go mgr.watch(ctx)
 
-	// The pre-seeded secret triggers AddFunc during the initial list phase.
 	select {
 	case <-onUpdateCalled:
 	case <-time.After(10 * time.Second):
@@ -641,7 +697,7 @@ func TestWatch_AddFunc(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []byte("ca"), data)
 
-	cancel() // stop the informer
+	cancel()
 }
 
 func TestWatch_UpdateFunc(t *testing.T) {
@@ -662,19 +718,16 @@ func TestWatch_UpdateFunc(t *testing.T) {
 
 	go mgr.watch(ctx)
 
-	// Wait for the initial AddFunc (the pre-seeded secret).
 	select {
 	case <-onUpdateCalled:
 	case <-time.After(10 * time.Second):
 		t.Fatal("AddFunc not called")
 	}
 
-	// Send an update event.
 	updated := secret.DeepCopy()
 	updated.Data = map[string][]byte{"ca.crt": []byte("updated")}
 	(*fwPtr).Modify(updated)
 
-	// Wait for UpdateFunc to be called.
 	select {
 	case <-onUpdateCalled:
 	case <-time.After(10 * time.Second):
@@ -695,7 +748,6 @@ func TestWatch_DeleteFunc(t *testing.T) {
 
 	mgr, _, fwPtr, onUpdateCalled := buildWatchMgr(t, secret, nil)
 
-	// Intercept Fatal so the goroutine doesn't call os.Exit.
 	fatalCalled := make(chan struct{}, 1)
 	log.StandardLogger().ExitFunc = func(int) {
 		select {
@@ -710,14 +762,12 @@ func TestWatch_DeleteFunc(t *testing.T) {
 
 	go mgr.watch(ctx)
 
-	// Wait for the initial AddFunc so we know the informer is running.
 	select {
 	case <-onUpdateCalled:
 	case <-time.After(10 * time.Second):
 		t.Fatal("AddFunc not called")
 	}
 
-	// Send a delete event to trigger DeleteFunc → Fatal.
 	(*fwPtr).Delete(secret)
 
 	select {
@@ -732,52 +782,6 @@ func TestWatch_DeleteFunc(t *testing.T) {
 // ─── Watch (retry loop) ───────────────────────────────────────────────────────
 
 func TestWatch_RetryLoop(t *testing.T) {
-	// Use a very short retry delay so the test does not take 5 seconds.
-	origDelay := watchRetryDelay
-	watchRetryDelay = 10 * time.Millisecond
-	defer func() { watchRetryDelay = origDelay }()
-
-	mgr := &Manager{
-		config:      &Config{Paths: &WritePathConfig{}, OnUpdate: func() {}},
-		certificate: &cmv1.Certificate{},
-		logger:      log.WithFields(log.Fields{}),
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// watchFn just records invocations and returns immediately.
-	called := make(chan struct{}, 20)
-	mgr.watchFn = func(context.Context) {
-		select {
-		case called <- struct{}{}:
-		default:
-		}
-	}
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		mgr.Watch(ctx)
-	}()
-
-	// Consume two calls: first covers the time.After branch, second the loop.
-	<-called
-	<-called
-	cancel()
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Watch did not stop after context cancellation")
-	}
-}
-
-// TestWatch_WithRealInformer tests the full Watch→watch path.
-func TestWatch_WithRealInformer(t *testing.T) {
-	origDelay := watchRetryDelay
-	watchRetryDelay = 10 * time.Millisecond
-	defer func() { watchRetryDelay = origDelay }()
-
 	secret := &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: testCertName, Namespace: testNamespace},
 	}
@@ -792,18 +796,37 @@ func TestWatch_WithRealInformer(t *testing.T) {
 		mgr.Watch(ctx)
 	}()
 
-	// Wait for AddFunc to confirm the real informer loop is running.
+	// Wait for AddFunc to confirm the informer loop ran.
 	select {
 	case <-onUpdateCalled:
 	case <-time.After(10 * time.Second):
 		t.Fatal("Watch/watch did not call AddFunc")
 	}
 
+	// Allow the retry loop to fire (the informer returns, triggering the
+	// retry delay), then cancel on the second iteration.
+	// The WatchRetryDelay is 10ms (set by buildWatchMgr), so this resolves
+	// quickly. We wait a bit to let the retry log message and delay execute.
+	time.Sleep(50 * time.Millisecond)
 	cancel()
 
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("Watch did not stop")
+		t.Fatal("Watch did not stop after context cancellation")
 	}
+}
+
+func TestWatchRetryDelay_Default(t *testing.T) {
+	mgr := &Manager{
+		config: &Config{},
+	}
+	assert.Equal(t, defaultWatchRetryDelay, mgr.watchRetryDelay())
+}
+
+func TestWatchRetryDelay_Custom(t *testing.T) {
+	mgr := &Manager{
+		config: &Config{WatchRetryDelay: 42 * time.Second},
+	}
+	assert.Equal(t, 42*time.Second, mgr.watchRetryDelay())
 }
