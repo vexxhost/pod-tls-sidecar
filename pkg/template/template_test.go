@@ -92,6 +92,36 @@ spec:
 	assert.Equal(t, fmt.Sprintf("%s-ssl", values.PodInfo.Name), certificate.Spec.SecretName)
 }
 
+func TestNew_InvalidTemplate(t *testing.T) {
+	_, err := New("{{ invalid")
+	require.Error(t, err)
+}
+
+func TestNewFromFile_NotFound(t *testing.T) {
+	_, err := NewFromFile("testdata/nonexistent.yaml")
+	require.Error(t, err)
+}
+
+func TestExecute_TemplateError(t *testing.T) {
+	// len on a struct causes the built-in length function to return an error
+	// at execution time, which Execute propagates.
+	tmpl, err := New(`{{ len .PodInfo }}`)
+	require.NoError(t, err)
+
+	_, err = tmpl.Execute(&Values{})
+	require.Error(t, err)
+}
+
+func TestExecute_InvalidYAML(t *testing.T) {
+	// A template that renders to a bare scalar cannot be unmarshalled into a
+	// Certificate struct, so yaml.Unmarshal returns an error.
+	tmpl, err := New("not-valid-certificate-yaml")
+	require.NoError(t, err)
+
+	_, err = tmpl.Execute(&Values{})
+	require.Error(t, err)
+}
+
 func TestTemplateFromFile(t *testing.T) {
 	tmpl, err := NewFromFile("testdata/basic.yaml")
 	require.NoError(t, err)

@@ -26,8 +26,11 @@ import (
 	kubernetes "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 
+	pkgnet "github.com/vexxhost/pod-tls-sidecar/pkg/net"
 	"github.com/vexxhost/pod-tls-sidecar/pkg/template"
 )
+
+const defaultWatchRetryDelay = 5 * time.Second
 
 type WritePathConfig struct {
 	CertificateAuthorityPaths []string
@@ -44,7 +47,12 @@ type Manager struct {
 }
 
 func NewManager(config *Config) (*Manager, error) {
-	values, err := template.LoadValues()
+	resolver := config.Resolver
+	if resolver == nil {
+		resolver = pkgnet.SystemResolver{}
+	}
+
+	values, err := template.LoadValues(resolver)
 	if err != nil {
 		return nil, err
 	}
@@ -54,20 +62,29 @@ func NewManager(config *Config) (*Manager, error) {
 		return nil, err
 	}
 
-	clientset, err := kubernetes.NewForConfig(config.RestConfig)
-	if err != nil {
-		return nil, err
+	secretClient := config.SecretClient
+	certificateClient := config.CertificateClient
+
+	if secretClient == nil {
+		clientset, err := kubernetes.NewForConfig(config.RestConfig)
+		if err != nil {
+			return nil, err
+		}
+		secretClient = clientset.Secrets(certificate.Namespace)
 	}
 
-	cmClient, err := cmclient.NewForConfig(config.RestConfig)
-	if err != nil {
-		return nil, err
+	if certificateClient == nil {
+		cmClient, err := cmclient.NewForConfig(config.RestConfig)
+		if err != nil {
+			return nil, err
+		}
+		certificateClient = cmClient.Certificates(certificate.Namespace)
 	}
 
 	mgr := &Manager{
 		config:            config,
 		certificate:       certificate,
-		certificateClient: cmClient.Certificates(certificate.Namespace),
+		certificateClient: certificateClient,
 		logger: log.WithFields(log.Fields{
 			"certificateName": certificate.Name,
 			"podName":         values.PodInfo.Name,
@@ -77,7 +94,7 @@ func NewManager(config *Config) (*Manager, error) {
 			"hostname":        values.Hostname,
 			"fqdn":            values.FQDN,
 		}),
-		secretClient: clientset.Secrets(certificate.Namespace),
+		secretClient: secretClient,
 	}
 
 	return mgr, nil
@@ -140,12 +157,30 @@ func (m *Manager) Create(ctx context.Context) error {
 	return err
 }
 
+func (m *Manager) watchRetryDelay() time.Duration {
+	if m.config.WatchRetryDelay > 0 {
+		return m.config.WatchRetryDelay
+	}
+	return defaultWatchRetryDelay
+}
+
 func (m *Manager) Watch(ctx context.Context) {
 	for {
 		m.watch(ctx)
+
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		m.logger.Info("watch closed or disconnected, retrying in 5 seconds")
 
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(m.watchRetryDelay()):
+		}
 	}
 }
 
@@ -183,7 +218,10 @@ func (m *Manager) watch(ctx context.Context) {
 	)
 
 	stop := make(chan struct{})
-	defer close(stop)
+	go func() {
+		<-ctx.Done()
+		close(stop)
+	}()
 	controller.Run(stop)
 }
 
@@ -240,3 +278,4 @@ func (m *Manager) writeFile(path string, data []byte) {
 		log.Fatal(err)
 	}
 }
+

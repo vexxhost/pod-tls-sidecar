@@ -14,18 +14,18 @@ type Values struct {
 	FQDN     string
 }
 
-func LoadValues() (*Values, error) {
+func LoadValues(resolver net.Resolver) (*Values, error) {
 	podInfo, err := podinfo.Load()
 	if err != nil {
 		return nil, err
 	}
 
-	hostname, err := net.Hostname()
+	hostname, err := resolver.Hostname()
 	if err != nil {
 		return nil, err
 	}
 
-	fqdn, err := net.FQDN()
+	fqdn, err := resolver.FQDN()
 	if err != nil {
 		return nil, err
 	}
