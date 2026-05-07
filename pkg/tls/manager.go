@@ -188,22 +188,26 @@ func (m *Manager) watch(ctx context.Context) {
 }
 
 func (m *Manager) write(secret *v1.Secret) {
+	changed := false
+
 	for _, path := range m.config.Paths.CertificateAuthorityPaths {
-		m.writeFile(path, secret.Data["ca.crt"])
+		changed = m.writeFile(path, secret.Data["ca.crt"]) || changed
 	}
 
 	for _, path := range m.config.Paths.CertificatePaths {
-		m.writeFile(path, secret.Data["tls.crt"])
+		changed = m.writeFile(path, secret.Data["tls.crt"]) || changed
 	}
 
 	for _, path := range m.config.Paths.CertificateKeyPaths {
-		m.writeFile(path, secret.Data["tls.key"])
+		changed = m.writeFile(path, secret.Data["tls.key"]) || changed
 	}
 
-	m.config.OnUpdate()
+	if changed {
+		m.config.OnUpdate()
+	}
 }
 
-func (m *Manager) writeFile(path string, data []byte) {
+func (m *Manager) writeFile(path string, data []byte) bool {
 	log := m.logger.WithFields(log.Fields{
 		"path": path,
 	})
@@ -223,14 +227,14 @@ func (m *Manager) writeFile(path string, data []byte) {
 				log.Fatal(err)
 			}
 
-			return
+			return true
 		}
 
 		m.logger.Fatal(err)
 	}
 
 	if bytes.Equal(existingData, data) {
-		return
+		return false
 	}
 
 	log.Info("file contents changed, updating file")
@@ -239,4 +243,6 @@ func (m *Manager) writeFile(path string, data []byte) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	return true
 }
