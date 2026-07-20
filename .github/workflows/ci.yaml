@@ -26,4 +26,4 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-      - uses: robherley/go-test-action@ded24db7182143ded3264c543f5dc3dd1e5bb5fe # v1.0.1
+      - uses: robherley/go-test-action@2f859e0c8769d755d3174eecb9af8f64660827f3 # v1.1.0
