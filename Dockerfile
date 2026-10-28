@@ -1,7 +1,7 @@
 # Copyright (c) 2024 VEXXHOST, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-FROM golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647 AS builder
+FROM golang:1.27.3@sha256:2920bb124f1a2e12a1d39f0cab756ae0068441ee1da7655dec7f5e374944095b AS builder
 WORKDIR /src
 COPY go.mod go.sum /src/
 RUN go mod download
